@@ -4,18 +4,17 @@ import java.util.*;
 
 public class CityMap {
 
-    private final Map<String, Map<String, Double>> roads = new HashMap<>();
+    private final Map<String, Map<String, Double>> roads;
 
     public CityMap() {
-        addRoad("Marina Beach", "Fort St. George", 2.7);
-        addRoad("Marina Beach", "Kapaleeshwarar Temple", 2.1);
-        addRoad("Kapaleeshwarar Temple", "Santhome Basilica", 1.1);
-        addRoad("Santhome Basilica", "Elliot's Beach", 6.5);
-        addRoad("Fort St. George", "Chennai Central Railway Station", 5.6);
-        addRoad("Fort St. George", "Government Museum, Egmore", 6.0);
-        addRoad("Government Museum, Egmore", "Valluvar Kottam", 5.0);
-        addRoad("Valluvar Kottam", "Kapaleeshwarar Temple", 6.3);
-        addRoad("Elliot's Beach", "Valluvar Kottam", 11.5);
+        try {
+            PlaceRepository repository = new PlaceRepository();
+            roads = repository.loadRoads();
+        } catch (java.sql.SQLException e) {
+            throw new IllegalStateException(
+                "Could not load the city map from MySQL.", e
+            );
+        }
     }
 
     private void addRoad(String place1, String place2, double distance) {
