@@ -7,6 +7,14 @@ import java.awt.*;
 import java.util.*;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
+import java.nio.file.Path;
+
+import javafx.application.Platform;
+import javafx.concurrent.Worker;
+import javafx.embed.swing.JFXPanel;
+import javafx.scene.Scene;
+import javafx.scene.web.WebEngine;
+import javafx.scene.web.WebView;
 
 public class SmartNavigationApp extends JFrame {
 
@@ -48,7 +56,7 @@ public class SmartNavigationApp extends JFrame {
     }
 
     // =====================================================
-    // LOAD ACTUAL BACKEND
+    // LOAD DATABASE BACKEND
     // =====================================================
 
     private void loadBackend() {
@@ -94,18 +102,17 @@ public class SmartNavigationApp extends JFrame {
                         );
                     }
 
-                    DefaultComboBoxModel<String> model1 =
+                    startBox.setModel(
                             new DefaultComboBoxModel<>(
                                     locations.toArray(new String[0])
-                            );
+                            )
+                    );
 
-                    DefaultComboBoxModel<String> model2 =
+                    destinationBox.setModel(
                             new DefaultComboBoxModel<>(
                                     locations.toArray(new String[0])
-                            );
-
-                    startBox.setModel(model1);
-                    destinationBox.setModel(model2);
+                            )
+                    );
 
                     if (locations.size() > 1) {
                         destinationBox.setSelectedIndex(1);
@@ -130,7 +137,7 @@ public class SmartNavigationApp extends JFrame {
                             + "Select your starting location and "
                             + "destination.\n\n"
                             + "Click FIND SHORTEST ROUTE to calculate "
-                            + "the shortest route using your backend."
+                            + "the shortest route."
                     );
 
                     mapPanel.repaint();
@@ -138,6 +145,7 @@ public class SmartNavigationApp extends JFrame {
                 } catch (InterruptedException ex) {
 
                     Thread.currentThread().interrupt();
+
                     showBackendError(
                             "Database loading was interrupted."
                     );
@@ -200,7 +208,7 @@ public class SmartNavigationApp extends JFrame {
     }
 
     // =====================================================
-    // INTERFACE
+    // USER INTERFACE
     // =====================================================
 
     private void createInterface() {
@@ -259,9 +267,7 @@ public class SmartNavigationApp extends JFrame {
 
         // LEFT SIDE
 
-        JPanel left = new JPanel(
-                new BorderLayout(0, 15)
-        );
+        JPanel left = new JPanel(new BorderLayout(0, 15));
         left.setBackground(background);
 
         // ROUTE PLANNER
@@ -359,10 +365,10 @@ public class SmartNavigationApp extends JFrame {
 
         left.add(information, BorderLayout.CENTER);
 
-        // RIGHT SIDE: SCHEMATIC ROAD NETWORK
+        // RIGHT SIDE: INTERACTIVE MAP
 
         JPanel mapContainer = createPanel(
-                "CHENNAI ROAD NETWORK"
+                "INTERACTIVE CHENNAI MAP"
         );
 
         mapContainer.setLayout(
@@ -374,7 +380,7 @@ public class SmartNavigationApp extends JFrame {
         mapContainer.add(mapPanel, BorderLayout.CENTER);
 
         JLabel mapNote = new JLabel(
-                "SCHEMATIC NETWORK | Route based on database roads"
+                "OPENSTREETMAP | REAL ROAD ROUTING"
         );
 
         mapNote.setForeground(lightPink);
@@ -496,14 +502,15 @@ public class SmartNavigationApp extends JFrame {
                 + "Locations and road distances will be loaded "
                 + "from MySQL.\n\n"
                 + "The shortest route will be calculated using "
-                + "your backend's Dijkstra algorithm."
+                + "the backend's Dijkstra algorithm.\n\n"
+                + "The interactive map uses online map data."
         );
 
         resultArea.setCaretPosition(0);
     }
 
     // =====================================================
-    // SHORTEST ROUTE USING FRIEND'S DIJKSTRA CLASS
+    // SHORTEST ROUTE
     // =====================================================
 
     private void findShortestRoute() {
@@ -538,6 +545,18 @@ public class SmartNavigationApp extends JFrame {
             return;
         }
 
+        if (start.equals(destination)) {
+
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Choose two different locations.",
+                    "Same Location",
+                    JOptionPane.WARNING_MESSAGE
+            );
+
+            return;
+        }
+
         try {
 
             Dijkstra.RouteResult result =
@@ -550,14 +569,17 @@ public class SmartNavigationApp extends JFrame {
             if (result == null) {
 
                 currentRoute.clear();
+                mapPanel.clearRoute();
 
                 resultArea.setText(
-                        "NO ROUTE FOUND\n"
-                        + "==============================\n\n"
+                        "NO ROUTE FOUND IN DATABASE\n"
+                        + "================================\n\n"
                         + "From: " + start + "\n"
                         + "To: " + destination + "\n\n"
-                        + "There is no connected route between "
-                        + "these locations in the loaded road network."
+                        + "The database road network does not "
+                        + "contain a connected route between "
+                        + "these locations.\n\n"
+                        + "The online map route is cleared."
                 );
 
                 distanceLabel.setText(
@@ -565,10 +587,8 @@ public class SmartNavigationApp extends JFrame {
                 );
 
                 statusLabel.setText(
-                        "STATUS | NO ROUTE"
+                        "STATUS | NO DATABASE ROUTE"
                 );
-
-                mapPanel.repaint();
 
                 return;
             }
@@ -576,6 +596,10 @@ public class SmartNavigationApp extends JFrame {
             currentRoute = new ArrayList<>(
                     result.getPath()
             );
+
+            // Draw the real road route on the online map.
+            // The HTML map must contain matching landmark names.
+            mapPanel.showRoute(start, destination);
 
             StringBuilder output = new StringBuilder();
 
@@ -606,7 +630,7 @@ public class SmartNavigationApp extends JFrame {
                     .append(destination)
                     .append("\n\n");
 
-            output.append("TOTAL DISTANCE: ")
+            output.append("DATABASE DISTANCE: ")
                     .append(
                             String.format(
                                     Locale.US,
@@ -617,7 +641,7 @@ public class SmartNavigationApp extends JFrame {
                     .append(" km\n\n");
 
             output.append(
-                    "Algorithm: Backend Dijkstra\n"
+                    "Algorithm: Dijkstra\n"
             );
 
             output.append(
@@ -625,15 +649,17 @@ public class SmartNavigationApp extends JFrame {
             );
 
             output.append(
-                    "Distance reflects the weights stored "
-                    + "in the database."
+                    "The database distance uses stored road "
+                    + "weights. The interactive map requests a "
+                    + "separate driving route from the online "
+                    + "routing service."
             );
 
             resultArea.setText(output.toString());
             resultArea.setCaretPosition(0);
 
             distanceLabel.setText(
-                    "DISTANCE | "
+                    "DB DISTANCE | "
                     + String.format(
                             Locale.US,
                             "%.2f",
@@ -643,10 +669,8 @@ public class SmartNavigationApp extends JFrame {
             );
 
             statusLabel.setText(
-                    "STATUS | ROUTE FOUND"
+                    "STATUS | DATABASE ROUTE FOUND"
             );
-
-            mapPanel.repaint();
 
         } catch (Exception ex) {
 
@@ -683,6 +707,8 @@ public class SmartNavigationApp extends JFrame {
 
         currentRoute.clear();
 
+        mapPanel.clearRoute();
+
         showWelcomeMessage();
 
         distanceLabel.setText(
@@ -699,311 +725,187 @@ public class SmartNavigationApp extends JFrame {
     }
 
     // =====================================================
-    // SCHEMATIC ROAD NETWORK
+    // INTERACTIVE OPENSTREETMAP PANEL
     // =====================================================
 
     private class MapPanel extends JPanel {
 
+        private final JFXPanel fxPanel;
+
+        private WebEngine webEngine;
+
+        private boolean mapLoaded = false;
+
+        private String pendingStart;
+        private String pendingDestination;
+
         MapPanel() {
 
-            setBackground(
-                    new Color(12, 18, 32)
-            );
+            setLayout(new BorderLayout());
 
             setPreferredSize(
                     new Dimension(480, 520)
             );
-        }
 
-        @Override
-        protected void paintComponent(Graphics g) {
+            fxPanel = new JFXPanel();
 
-            super.paintComponent(g);
+            add(fxPanel, BorderLayout.CENTER);
 
-            Graphics2D g2 =
-                    (Graphics2D) g.create();
+            Platform.runLater(() -> {
 
-            g2.setRenderingHint(
-                    RenderingHints.KEY_ANTIALIASING,
-                    RenderingHints.VALUE_ANTIALIAS_ON
-            );
+                WebView webView = new WebView();
 
-            int width = getWidth();
-            int height = getHeight();
+                webView.setContextMenuEnabled(true);
 
-            drawGrid(g2, width, height);
+                webEngine = webView.getEngine();
 
-            if (!backendReady || cityMap == null) {
+                webEngine.getLoadWorker()
+                        .stateProperty()
+                        .addListener(
+                    (observable, oldState, newState) -> {
 
-                g2.setColor(Color.WHITE);
+                        if (newState == Worker.State.SUCCEEDED) {
 
-                g2.setFont(
-                        new Font("Arial", Font.BOLD, 14)
+                            mapLoaded = true;
+
+                            if (pendingStart != null
+                                    && pendingDestination != null) {
+
+                                executeRoute(
+                                        pendingStart,
+                                        pendingDestination
+                                );
+                            }
+
+                        } else if (newState == Worker.State.FAILED) {
+
+                            mapLoaded = false;
+
+                            System.err.println(
+                                    "Map loading failed: "
+                                    + webEngine.getLocation()
+                            );
+                        }
+                    }
                 );
 
-                g2.drawString(
-                        "Waiting for backend...",
-                        20,
-                        35
+                fxPanel.setScene(
+                        new Scene(webView)
                 );
 
-                g2.dispose();
+                try {
 
-                return;
-            }
+                    Path htmlPath = Path.of(
+                            "assets",
+                            "chennai_map.html"
+                    ).toAbsolutePath();
 
-            List<String> locations =
-                    new ArrayList<>(
-                            cityMap.getLocations()
-                    );
+                    if (!java.nio.file.Files.exists(htmlPath)) {
 
-            Collections.sort(locations);
+                        System.err.println(
+                                "Map HTML file not found: "
+                                + htmlPath
+                        );
 
-            if (locations.isEmpty()) {
-
-                g2.setColor(Color.WHITE);
-
-                g2.drawString(
-                        "No locations available",
-                        20,
-                        35
-                );
-
-                g2.dispose();
-
-                return;
-            }
-
-            Map<String, Point> points =
-                    calculatePoints(
-                            locations,
-                            width,
-                            height
-                    );
-
-            drawRoads(g2, points);
-            drawRoute(g2, points);
-            drawLocations(g2, points, locations);
-
-            g2.dispose();
-        }
-
-        private void drawGrid(
-                Graphics2D g2,
-                int width,
-                int height) {
-
-            g2.setColor(
-                    new Color(25, 34, 52)
-            );
-
-            for (int x = 0; x < width; x += 35) {
-                g2.drawLine(x, 0, x, height);
-            }
-
-            for (int y = 0; y < height; y += 35) {
-                g2.drawLine(0, y, width, y);
-            }
-        }
-
-        private Map<String, Point> calculatePoints(
-                List<String> locations,
-                int width,
-                int height) {
-
-            Map<String, Point> points =
-                    new LinkedHashMap<>();
-
-            int count = locations.size();
-
-            int centerX = width / 2;
-            int centerY = height / 2;
-
-            int radiusX = Math.max(
-                    35,
-                    width / 2 - 75
-            );
-
-            int radiusY = Math.max(
-                    35,
-                    height / 2 - 75
-            );
-
-            for (int i = 0; i < count; i++) {
-
-                double angle =
-                        -Math.PI / 2
-                        + (2.0 * Math.PI * i / count);
-
-                int x = centerX
-                        + (int) (radiusX * Math.cos(angle));
-
-                int y = centerY
-                        + (int) (radiusY * Math.sin(angle));
-
-                points.put(
-                        locations.get(i),
-                        new Point(x, y)
-                );
-            }
-
-            return points;
-        }
-
-        private void drawRoads(
-                Graphics2D g2,
-                Map<String, Point> points) {
-
-            Map<String, Map<String, Double>> roads =
-                    cityMap.getRoads();
-
-            g2.setStroke(
-                    new BasicStroke(1.5f)
-            );
-
-            g2.setColor(
-                    new Color(95, 75, 125)
-            );
-
-            for (Map.Entry<String, Map<String, Double>> entry
-                    : roads.entrySet()) {
-
-                String from = entry.getKey();
-
-                Point p1 = points.get(from);
-
-                if (p1 == null) {
-                    continue;
-                }
-
-                for (String to : entry.getValue().keySet()) {
-
-                    Point p2 = points.get(to);
-
-                    if (p2 == null) {
-                        continue;
+                        return;
                     }
 
-                    // Draw each undirected connection once.
-                    // Directed connections are also represented
-                    // as a schematic line.
-                    if (from.compareTo(to) < 0) {
-                        g2.drawLine(
-                                p1.x,
-                                p1.y,
-                                p2.x,
-                                p2.y
+                    webEngine.load(
+                            htmlPath.toUri().toString()
+                    );
+
+                } catch (Exception ex) {
+
+                    System.err.println(
+                            "Could not open Chennai map: "
+                            + ex.getMessage()
+                    );
+                }
+            });
+        }
+
+        public void showRoute(
+                String start,
+                String destination) {
+
+            pendingStart = start;
+            pendingDestination = destination;
+
+            if (mapLoaded) {
+                Platform.runLater(
+                        () -> executeRoute(start, destination)
+                );
+            }
+        }
+
+        private void executeRoute(
+                String start,
+                String destination) {
+
+            if (!mapLoaded || webEngine == null) {
+                return;
+            }
+
+            String script =
+                    "showRoute("
+                    + toJavaScriptString(start)
+                    + ", "
+                    + toJavaScriptString(destination)
+                    + ");";
+
+            try {
+
+                webEngine.executeScript(script);
+
+            } catch (Exception ex) {
+
+                System.err.println(
+                        "Could not display route: "
+                        + ex.getMessage()
+                );
+            }
+        }
+
+        public void clearRoute() {
+
+            pendingStart = null;
+            pendingDestination = null;
+
+            if (mapLoaded && webEngine != null) {
+
+                Platform.runLater(() -> {
+
+                    try {
+
+                        webEngine.executeScript(
+                                "clearRoute();"
+                        );
+
+                    } catch (Exception ex) {
+
+                        System.err.println(
+                                "Could not clear map route: "
+                                + ex.getMessage()
                         );
                     }
-                }
+                });
             }
         }
 
-        private void drawRoute(
-                Graphics2D g2,
-                Map<String, Point> points) {
+        private String toJavaScriptString(String value) {
 
-            if (currentRoute.size() < 2) {
-                return;
-            }
+            String escaped = value
+                    .replace("\\", "\\\\")
+                    .replace("'", "\\'")
+                    .replace("\r", "\\r")
+                    .replace("\n", "\\n");
 
-            g2.setColor(green);
-
-            g2.setStroke(
-                    new BasicStroke(
-                            4.5f,
-                            BasicStroke.CAP_ROUND,
-                            BasicStroke.JOIN_ROUND
-                    )
-            );
-
-            for (int i = 0;
-                    i < currentRoute.size() - 1;
-                    i++) {
-
-                Point p1 = points.get(
-                        currentRoute.get(i)
-                );
-
-                Point p2 = points.get(
-                        currentRoute.get(i + 1)
-                );
-
-                if (p1 != null && p2 != null) {
-
-                    g2.drawLine(
-                            p1.x,
-                            p1.y,
-                            p2.x,
-                            p2.y
-                    );
-                }
-            }
-        }
-
-        private void drawLocations(
-                Graphics2D g2,
-                Map<String, Point> points,
-                List<String> locations) {
-
-            for (String location : locations) {
-
-                Point point = points.get(location);
-
-                if (point == null) {
-                    continue;
-                }
-
-                boolean selected =
-                        currentRoute.contains(location);
-
-                g2.setColor(
-                        selected ? green : pink
-                );
-
-                g2.fillOval(
-                        point.x - 6,
-                        point.y - 6,
-                        12,
-                        12
-                );
-
-                g2.setColor(Color.WHITE);
-
-                g2.setFont(
-                        new Font("Arial", Font.PLAIN, 10)
-                );
-
-                String label = location;
-
-                int maximumLabelLength = 22;
-
-                if (label.length() > maximumLabelLength) {
-                    label = label.substring(
-                            0,
-                            maximumLabelLength - 3
-                    ) + "...";
-                }
-
-                int labelX = point.x + 9;
-
-                if (labelX + 130 > getWidth()) {
-                    labelX = point.x - 125;
-                }
-
-                int labelY = point.y - 8;
-
-                g2.drawString(
-                        label,
-                        labelX,
-                        labelY
-                );
-            }
+            return "'" + escaped + "'";
         }
     }
 
     // =====================================================
-    // MAIN METHOD
+    // MAIN
     // =====================================================
 
     public static void main(String[] args) {
@@ -1013,3 +915,4 @@ public class SmartNavigationApp extends JFrame {
         );
     }
 }
+

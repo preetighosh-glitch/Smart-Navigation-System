@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chennai Smart Navigation Map</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+html, body, #map { width:100%; height:100%; margin:0; padding:0; }
+body { overflow:hidden; font-family:Arial,sans-serif; }
+#status { position:absolute; z-index:1000; top:10px; left:50px; max-width:70%; background:#fff; padding:8px 12px; border-radius:6px; box-shadow:0 1px 5px #777; font-size:13px; }
+</style>
+</head>
+<body>
+<div id="status">Chennai map loading…</div>
+<div id="map"></div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const places = {
+  "Marina Beach": [13.0500, 80.2824],
+  "Fort St. George": [13.0800, 80.2870],
+  "Kapaleeshwarar Temple": [13.0336, 80.2697],
+  "Santhome Basilica": [13.0339, 80.2786],
+  "Elliot's Beach": [12.9988, 80.2707],
+  "Chennai Central Railway Station": [13.0827, 80.2756],
+  "Government Museum, Egmore": [13.0716, 80.2570],
+  "Valluvar Kottam": [13.0524, 80.2420]
+};
+const map = L.map('map').setView([13.055, 80.270], 12);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'
+}).addTo(map);
+const markers = {};
+Object.entries(places).forEach(([name, coords]) => {
+  markers[name] = L.marker(coords).addTo(map).bindPopup(name);
+});
+let routeLayer = null;
+function setStatus(text) { document.getElementById('status').textContent = text; }
+async function showRoute(startName, destinationName) {
+  if (!places[startName] || !places[destinationName]) {
+    setStatus('Choose valid start and destination places in the app.');
+    return;
+  }
+  if (routeLayer) { map.removeLayer(routeLayer); routeLayer = null; }
+  setStatus('Finding road route: ' + startName + ' → ' + destinationName + '…');
+  try {
+    const a = places[startName], b = places[destinationName];
+    const url = `https://router.project-osrm.org/route/v1/driving/${a[1]},${a[0]};${b[1]},${b[0]}?overview=full&geometries=geojson`;
+    const response = await fetch(url);
+    if (!response.ok) throw new Error('Routing service unavailable');
+    const data = await response.json();
+    if (!data.routes || !data.routes.length) throw new Error('No road route found');
+    const route = data.routes[0];
+    routeLayer = L.geoJSON(route.geometry, {style:{color:'#1677e8',weight:6,opacity:0.9}}).addTo(map);
+    map.fitBounds(routeLayer.getBounds(), {padding:[35,35]});
+    markers[startName].openPopup();
+    setStatus(`${startName} → ${destinationName} · ${(route.distance/1000).toFixed(2)} km by road · about ${Math.round(route.duration/60)} min`);
+  } catch (e) {
+    const bounds = L.latLngBounds([places[startName], places[destinationName]]);
+    map.fitBounds(bounds, {padding:[35,35]});
+    setStatus('Road route unavailable. Check internet; showing selected locations. ' + e.message);
+  }
+}
+function clearRoute() {
+  if (routeLayer) { map.removeLayer(routeLayer); routeLayer = null; }
+  map.setView([13.055,80.270],12);
+  setStatus('Select start and destination in the app, then click Find Shortest Route.');
+}
+window.showRoute = showRoute;
+window.clearRoute = clearRoute;
+window.addEventListener('load', () => {
+  setTimeout(() => map.invalidateSize(), 250);
+  setStatus('Select places in the app to display a road route.');
+});
+</script>
+</body>
+</html>
