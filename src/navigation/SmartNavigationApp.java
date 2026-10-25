@@ -1,9 +1,12 @@
+
 package navigation;
 
 import javax.swing.*;
 import javax.swing.border.*;
 import java.awt.*;
 import java.util.*;
+import java.util.List;
+import java.util.concurrent.ExecutionException;
 
 public class SmartNavigationApp extends JFrame {
 
@@ -12,81 +15,202 @@ public class SmartNavigationApp extends JFrame {
     private JTextArea resultArea;
     private JLabel distanceLabel;
     private JLabel statusLabel;
+    private JLabel systemLabel;
+    private MapPanel mapPanel;
+    private JButton findButton;
+    private JButton resetButton;
 
-    // CYBERPUNK THEME
+    private CityMap cityMap;
+    private boolean backendReady = false;
+
+    private List<String> currentRoute = new ArrayList<>();
+
     private final Color background = new Color(8, 6, 17);
     private final Color panel = new Color(20, 15, 35);
     private final Color purple = new Color(145, 75, 210);
     private final Color pink = new Color(255, 75, 190);
     private final Color lightPink = new Color(220, 170, 255);
     private final Color green = new Color(65, 255, 190);
-
-    // AVAILABLE LOCATIONS
-    private final String[] locations = {
-        "Sathyabama University",
-        "Adyar",
-        "Marina Beach",
-        "Chennai Central",
-        "T Nagar",
-        "Guindy",
-        "Tambaram",
-        "Mahabalipuram"
-    };
-
-    // ROAD NETWORK
-    private final Map<String, Map<String, Integer>> graph =
-            new LinkedHashMap<>();
+    private final Color muted = new Color(185, 175, 205);
 
     public SmartNavigationApp() {
-        createGraph();
+        createInterface();
 
         setTitle("Smart Navigation System");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setMinimumSize(new Dimension(800, 600));
-        setSize(1200, 750);
+        setMinimumSize(new Dimension(900, 700));
+        setSize(1250, 850);
         setLocationRelativeTo(null);
-        setResizable(true);
 
-        createInterface();
-
-        getContentPane().setBackground(background);
         setVisible(true);
+
+        loadBackend();
     }
 
-    // CREATE THE ROAD NETWORK
-    private void createGraph() {
+    // =====================================================
+    // LOAD ACTUAL BACKEND
+    // =====================================================
 
-        for (String location : locations) {
-            graph.put(location, new LinkedHashMap<>());
-        }
+    private void loadBackend() {
 
-        addRoad("Sathyabama University", "Adyar", 12);
-        addRoad("Sathyabama University", "Mahabalipuram", 35);
-        addRoad("Adyar", "Marina Beach", 10);
-        addRoad("Adyar", "Guindy", 8);
-        addRoad("Marina Beach", "Chennai Central", 5);
-        addRoad("Marina Beach", "T Nagar", 7);
-        addRoad("Chennai Central", "T Nagar", 9);
-        addRoad("T Nagar", "Guindy", 6);
-        addRoad("Guindy", "Tambaram", 18);
-        addRoad("Mahabalipuram", "Tambaram", 32);
-        addRoad("Adyar", "T Nagar", 8);
+        backendReady = false;
+
+        findButton.setEnabled(false);
+        resetButton.setEnabled(false);
+
+        systemLabel.setText("● CONNECTING TO DATABASE");
+        systemLabel.setForeground(pink);
+
+        statusLabel.setText("STATUS | CONNECTING");
+
+        resultArea.setText(
+                "CONNECTING TO THE NAVIGATION DATABASE...\n\n"
+                + "Loading locations and road connections from MySQL.\n"
+                + "Please wait."
+        );
+
+        SwingWorker<CityMap, Void> worker =
+                new SwingWorker<CityMap, Void>() {
+
+            @Override
+            protected CityMap doInBackground() {
+                return new CityMap();
+            }
+
+            @Override
+            protected void done() {
+
+                try {
+                    cityMap = get();
+
+                    List<String> locations =
+                            new ArrayList<>(cityMap.getLocations());
+
+                    Collections.sort(locations);
+
+                    if (locations.isEmpty()) {
+                        throw new IllegalStateException(
+                                "The database contains no locations."
+                        );
+                    }
+
+                    DefaultComboBoxModel<String> model1 =
+                            new DefaultComboBoxModel<>(
+                                    locations.toArray(new String[0])
+                            );
+
+                    DefaultComboBoxModel<String> model2 =
+                            new DefaultComboBoxModel<>(
+                                    locations.toArray(new String[0])
+                            );
+
+                    startBox.setModel(model1);
+                    destinationBox.setModel(model2);
+
+                    if (locations.size() > 1) {
+                        destinationBox.setSelectedIndex(1);
+                    }
+
+                    backendReady = true;
+
+                    systemLabel.setText("● DATABASE CONNECTED");
+                    systemLabel.setForeground(green);
+
+                    findButton.setEnabled(true);
+                    resetButton.setEnabled(true);
+
+                    statusLabel.setText("STATUS | READY");
+
+                    resultArea.setText(
+                            "SMART NAVIGATION SYSTEM\n"
+                            + "================================\n\n"
+                            + "Database connection successful!\n\n"
+                            + "Locations loaded: " + locations.size()
+                            + "\n\n"
+                            + "Select your starting location and "
+                            + "destination.\n\n"
+                            + "Click FIND SHORTEST ROUTE to calculate "
+                            + "the shortest route using your backend."
+                    );
+
+                    mapPanel.repaint();
+
+                } catch (InterruptedException ex) {
+
+                    Thread.currentThread().interrupt();
+                    showBackendError(
+                            "Database loading was interrupted."
+                    );
+
+                } catch (ExecutionException ex) {
+
+                    Throwable cause = ex.getCause();
+
+                    String message = cause == null
+                            ? ex.getMessage()
+                            : cause.getMessage();
+
+                    showBackendError(message);
+
+                } catch (Exception ex) {
+
+                    showBackendError(ex.getMessage());
+                }
+            }
+        };
+
+        worker.execute();
     }
 
-    // ADD A TWO-WAY ROAD
-    private void addRoad(String first, String second, int km) {
-        graph.get(first).put(second, km);
-        graph.get(second).put(first, km);
+    private void showBackendError(String message) {
+
+        backendReady = false;
+
+        systemLabel.setText("● DATABASE ERROR");
+        systemLabel.setForeground(pink);
+
+        statusLabel.setText("STATUS | CONNECTION FAILED");
+
+        findButton.setEnabled(false);
+
+        resultArea.setText(
+                "COULD NOT LOAD THE NAVIGATION BACKEND\n"
+                + "====================================\n\n"
+                + "Reason:\n"
+                + (message == null ? "Unknown error." : message)
+                + "\n\nCheck the following:\n"
+                + "1. MySQL is running.\n"
+                + "2. DB_URL is configured.\n"
+                + "3. DB_USER is configured.\n"
+                + "4. DB_PASSWORD is configured.\n"
+                + "5. The MySQL JDBC driver is available.\n"
+                + "6. The places and roads tables exist.\n\n"
+                + "Fix the configuration and restart the app."
+        );
+
+        JOptionPane.showMessageDialog(
+                this,
+                "Could not load the database.\n\n"
+                + (message == null ? "Unknown error." : message),
+                "Backend Connection Error",
+                JOptionPane.ERROR_MESSAGE
+        );
+
+        mapPanel.repaint();
     }
 
-    // CREATE THE USER INTERFACE
+    // =====================================================
+    // INTERFACE
+    // =====================================================
+
     private void createInterface() {
 
-        JPanel root = new JPanel(new BorderLayout(0, 25));
+        JPanel root = new JPanel(new BorderLayout(15, 15));
         root.setBackground(background);
         root.setBorder(new EmptyBorder(20, 20, 20, 20));
 
         // HEADER
+
         JPanel header = new JPanel(new BorderLayout());
         header.setBackground(background);
 
@@ -97,186 +221,178 @@ public class SmartNavigationApp extends JFrame {
         titlePanel.setBackground(background);
 
         JLabel title = new JLabel("SMART NAVIGATION");
-        title.setFont(new Font("Arial", Font.BOLD, 34));
+        title.setFont(new Font("Arial", Font.BOLD, 32));
         title.setForeground(lightPink);
 
         JLabel subtitle = new JLabel(
-                "SYSTEM  |  Smarter. Faster. Better journeys."
+                "SYSTEM | Smarter. Faster. Better journeys."
         );
         subtitle.setFont(new Font("Arial", Font.PLAIN, 13));
-        subtitle.setForeground(new Color(185, 175, 205));
+        subtitle.setForeground(muted);
 
         titlePanel.add(title);
-        titlePanel.add(Box.createVerticalStrut(8));
+        titlePanel.add(Box.createVerticalStrut(6));
         titlePanel.add(subtitle);
 
-        JLabel systemReady = new JLabel("● SYSTEM READY");
-        systemReady.setFont(
-                new Font("Monospaced", Font.BOLD, 13)
+        systemLabel = new JLabel("● CONNECTING TO DATABASE");
+        systemLabel.setFont(
+                new Font("Monospaced", Font.BOLD, 12)
         );
-        systemReady.setForeground(green);
-        systemReady.setBorder(new CompoundBorder(
+        systemLabel.setForeground(pink);
+
+        systemLabel.setBorder(new CompoundBorder(
                 new LineBorder(new Color(45, 120, 100), 1),
-                new EmptyBorder(20, 16, 20, 16)
+                new EmptyBorder(12, 14, 12, 14)
         ));
 
         header.add(titlePanel, BorderLayout.WEST);
-        header.add(systemReady, BorderLayout.EAST);
+        header.add(systemLabel, BorderLayout.EAST);
 
         root.add(header, BorderLayout.NORTH);
 
-        // CENTER AREA
-        JPanel center = new JPanel(new GridBagLayout());
-        center.setBackground(background);
+        // MAIN CONTENT
 
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.gridx = 0;
-        gbc.weightx = 1;
-        gbc.fill = GridBagConstraints.BOTH;
-        gbc.insets = new Insets(0, 0, 18, 0);
+        JPanel content = new JPanel(
+                new GridLayout(1, 2, 15, 0)
+        );
+        content.setBackground(background);
+
+        // LEFT SIDE
+
+        JPanel left = new JPanel(
+                new BorderLayout(0, 15)
+        );
+        left.setBackground(background);
 
         // ROUTE PLANNER
+
         JPanel planner = createPanel("PLAN YOUR ROUTE");
 
-        JPanel routeFields = new JPanel(
-                new GridLayout(1, 2, 22, 0)
+        planner.setLayout(
+                new BoxLayout(planner, BoxLayout.Y_AXIS)
         );
-        routeFields.setBackground(panel);
 
-        // START LOCATION
-        JPanel startPanel = new JPanel(
-                new BorderLayout(0, 10)
-        );
-        startPanel.setBackground(panel);
-
-        JLabel startLabel = new JLabel(
-                "●  STARTING LOCATION"
-        );
-        startLabel.setFont(
-                new Font("Arial", Font.BOLD, 13)
-        );
-        startLabel.setForeground(green);
+        JLabel startLabel = new JLabel("STARTING LOCATION");
+        styleLabel(startLabel, green);
 
         startBox = createLocationBox();
 
-        startPanel.add(startLabel, BorderLayout.NORTH);
-        startPanel.add(startBox, BorderLayout.CENTER);
-
-        // DESTINATION
-        JPanel destinationPanel = new JPanel(
-                new BorderLayout(0, 10)
-        );
-        destinationPanel.setBackground(panel);
-
-        JLabel destinationLabel = new JLabel(
-                "●  DESTINATION"
-        );
-        destinationLabel.setFont(
-                new Font("Arial", Font.BOLD, 13)
-        );
-        destinationLabel.setForeground(pink);
+        JLabel destinationLabel = new JLabel("DESTINATION");
+        styleLabel(destinationLabel, pink);
 
         destinationBox = createLocationBox();
 
-        destinationPanel.add(
-                destinationLabel,
-                BorderLayout.NORTH
-        );
-        destinationPanel.add(
-                destinationBox,
-                BorderLayout.CENTER
-        );
-
-        routeFields.add(startPanel);
-        routeFields.add(destinationPanel);
-
-        // BUTTONS
-        JButton findButton = new JButton(
-                "FIND SHORTEST ROUTE"
-        );
+        findButton = new JButton("FIND SHORTEST ROUTE");
         styleButton(findButton, pink);
 
-        JButton resetButton = new JButton("RESET");
+        resetButton = new JButton("RESET");
         styleButton(resetButton, purple);
 
         JPanel buttons = new JPanel(
-                new FlowLayout(FlowLayout.LEFT, 12, 0)
+                new FlowLayout(FlowLayout.LEFT, 8, 5)
         );
         buttons.setBackground(panel);
+
         buttons.add(findButton);
         buttons.add(resetButton);
 
-        planner.add(routeFields);
-        planner.add(Box.createVerticalStrut(22));
+        planner.add(startLabel);
+        planner.add(Box.createVerticalStrut(7));
+        planner.add(startBox);
+        planner.add(Box.createVerticalStrut(15));
+        planner.add(destinationLabel);
+        planner.add(Box.createVerticalStrut(7));
+        planner.add(destinationBox);
+        planner.add(Box.createVerticalStrut(15));
         planner.add(buttons);
 
-        gbc.gridy = 0;
-        gbc.weighty = 0;
-        center.add(planner, gbc);
+        left.add(planner, BorderLayout.NORTH);
 
         // ROUTE INFORMATION
+
         JPanel information = createPanel("ROUTE INFORMATION");
+
         information.setLayout(
-                new BorderLayout(0, 15)
+                new BorderLayout(0, 10)
         );
 
         resultArea = new JTextArea();
+
         resultArea.setEditable(false);
         resultArea.setLineWrap(true);
         resultArea.setWrapStyleWord(true);
         resultArea.setFont(
-                new Font("Monospaced", Font.PLAIN, 14)
+                new Font("Monospaced", Font.PLAIN, 13)
         );
         resultArea.setForeground(Color.WHITE);
         resultArea.setBackground(background);
-        resultArea.setCaretColor(Color.WHITE);
-        resultArea.setMargin(new Insets(20, 20, 20, 20));
-
-        showWelcomeMessage();
+        resultArea.setMargin(new Insets(12, 12, 12, 12));
 
         JScrollPane scroll = new JScrollPane(resultArea);
+
         scroll.setBorder(new LineBorder(lightPink, 1));
         scroll.getViewport().setBackground(background);
 
         information.add(scroll, BorderLayout.CENTER);
 
-        // STATUS BAR
-        JPanel bottomStatus = new JPanel(
-                new GridLayout(1, 2)
+        JPanel statusContainer = new JPanel(
+                new GridLayout(2, 1, 0, 5)
         );
-        bottomStatus.setBackground(panel);
+
+        statusContainer.setBackground(panel);
+        statusContainer.setBorder(
+                new EmptyBorder(8, 8, 8, 8)
+        );
 
         distanceLabel = new JLabel(
-                "DISTANCE  |  NOT CALCULATED"
+                "DISTANCE | NOT CALCULATED"
         );
-        distanceLabel.setFont(
-                new Font("Arial", Font.BOLD, 12)
+        styleLabel(distanceLabel, lightPink);
+
+        statusLabel = new JLabel("STATUS | CONNECTING");
+        styleLabel(statusLabel, green);
+
+        statusContainer.add(distanceLabel);
+        statusContainer.add(statusLabel);
+
+        information.add(statusContainer, BorderLayout.SOUTH);
+
+        left.add(information, BorderLayout.CENTER);
+
+        // RIGHT SIDE: SCHEMATIC ROAD NETWORK
+
+        JPanel mapContainer = createPanel(
+                "CHENNAI ROAD NETWORK"
         );
-        distanceLabel.setForeground(lightPink);
 
-        statusLabel = new JLabel("STATUS  |  READY");
-        statusLabel.setFont(
-                new Font("Arial", Font.BOLD, 12)
-        );
-        statusLabel.setForeground(green);
-        statusLabel.setHorizontalAlignment(
-                SwingConstants.RIGHT
+        mapContainer.setLayout(
+                new BorderLayout(0, 8)
         );
 
-        bottomStatus.add(distanceLabel);
-        bottomStatus.add(statusLabel);
+        mapPanel = new MapPanel();
 
-        information.add(bottomStatus, BorderLayout.SOUTH);
+        mapContainer.add(mapPanel, BorderLayout.CENTER);
 
-        gbc.gridy = 1;
-        gbc.weighty = 1;
-        gbc.insets = new Insets(0, 0, 0, 0);
+        JLabel mapNote = new JLabel(
+                "SCHEMATIC NETWORK | Route based on database roads"
+        );
 
-        center.add(information, gbc);
+        mapNote.setForeground(lightPink);
+        mapNote.setFont(
+                new Font("Arial", Font.PLAIN, 11)
+        );
 
-        root.add(center, BorderLayout.CENTER);
+        mapNote.setBorder(
+                new EmptyBorder(8, 2, 2, 2)
+        );
 
-        // BUTTON ACTIONS
+        mapContainer.add(mapNote, BorderLayout.SOUTH);
+
+        content.add(left);
+        content.add(mapContainer);
+
+        root.add(content, BorderLayout.CENTER);
+
         findButton.addActionListener(
                 e -> findShortestRoute()
         );
@@ -285,125 +401,124 @@ public class SmartNavigationApp extends JFrame {
                 e -> resetForm()
         );
 
-        getRootPane().setDefaultButton(findButton);
-
         setContentPane(root);
+
+        showWelcomeMessage();
     }
 
-    // REUSABLE PANEL
     private JPanel createPanel(String heading) {
 
         JPanel panelBox = new JPanel();
 
         panelBox.setLayout(
-                new BoxLayout(panelBox, BoxLayout.Y_AXIS)
+                new BorderLayout(0, 12)
         );
+
         panelBox.setBackground(panel);
 
         panelBox.setBorder(new CompoundBorder(
                 new LineBorder(purple, 1),
-                new EmptyBorder(25, 25, 25, 25)
+                new EmptyBorder(15, 15, 15, 15)
         ));
 
-        JLabel label = new JLabel("▯  " + heading);
-        label.setFont(
-                new Font("Arial", Font.BOLD, 19)
-        );
-        label.setForeground(lightPink);
-        label.setAlignmentX(Component.LEFT_ALIGNMENT);
+        JLabel label = new JLabel(heading);
 
-        panelBox.add(label);
-        panelBox.add(Box.createVerticalStrut(25));
+        label.setFont(
+                new Font("Arial", Font.BOLD, 17)
+        );
+
+        label.setForeground(lightPink);
+
+        panelBox.add(label, BorderLayout.NORTH);
 
         return panelBox;
     }
 
-    // LOCATION DROPDOWN
+    private void styleLabel(JLabel label, Color color) {
+
+        label.setFont(
+                new Font("Arial", Font.BOLD, 12)
+        );
+
+        label.setForeground(color);
+    }
+
     private JComboBox<String> createLocationBox() {
 
-        JComboBox<String> box =
-                new JComboBox<>(locations);
+        JComboBox<String> box = new JComboBox<>();
 
         box.setFont(
-                new Font("Arial", Font.PLAIN, 14)
+                new Font("Arial", Font.PLAIN, 13)
         );
-        box.setForeground(Color.BLACK);
-        box.setBackground(Color.WHITE);
-        box.setPreferredSize(new Dimension(300, 48));
+
+        box.setPreferredSize(
+                new Dimension(260, 38)
+        );
+
         box.setMaximumSize(
-                new Dimension(Integer.MAX_VALUE, 48)
+                new Dimension(Integer.MAX_VALUE, 38)
         );
 
-        box.setRenderer(new DefaultListCellRenderer() {
-
-            @Override
-            public Component getListCellRendererComponent(
-                    JList<?> list,
-                    Object value,
-                    int index,
-                    boolean selected,
-                    boolean focus) {
-
-                JLabel label =
-                        (JLabel) super.getListCellRendererComponent(
-                                list,
-                                value,
-                                index,
-                                selected,
-                                focus
-                        );
-
-                label.setForeground(Color.BLACK);
-
-                label.setBackground(
-                        selected
-                                ? new Color(255, 220, 240)
-                                : Color.WHITE
-                );
-
-                return label;
-            }
-        });
+        box.setBackground(Color.WHITE);
+        box.setForeground(Color.BLACK);
 
         return box;
     }
 
-    // BUTTON STYLING
     private void styleButton(
             JButton button,
             Color borderColor) {
 
         button.setFont(
-                new Font("Arial", Font.BOLD, 12)
+                new Font("Arial", Font.BOLD, 11)
         );
+
         button.setForeground(Color.BLACK);
         button.setBackground(Color.WHITE);
         button.setFocusPainted(false);
         button.setOpaque(true);
+
         button.setBorder(new CompoundBorder(
                 new LineBorder(borderColor, 2),
-                new EmptyBorder(12, 20, 12, 20)
+                new EmptyBorder(10, 12, 10, 12)
         ));
+
         button.setCursor(
                 new Cursor(Cursor.HAND_CURSOR)
         );
     }
 
-    // INITIAL MESSAGE
     private void showWelcomeMessage() {
 
         resultArea.setText(
-                "Welcome to Smart Navigation System!\n\n"
-                + "Select your starting location and destination.\n"
-                + "Click FIND SHORTEST ROUTE to calculate the route.\n\n"
-                + "Your route details will appear here."
+                "WELCOME TO SMART NAVIGATION!\n\n"
+                + "Connecting to your navigation backend...\n\n"
+                + "Locations and road distances will be loaded "
+                + "from MySQL.\n\n"
+                + "The shortest route will be calculated using "
+                + "your backend's Dijkstra algorithm."
         );
 
         resultArea.setCaretPosition(0);
     }
 
-    // DIJKSTRA'S SHORTEST-PATH ALGORITHM
+    // =====================================================
+    // SHORTEST ROUTE USING FRIEND'S DIJKSTRA CLASS
+    // =====================================================
+
     private void findShortestRoute() {
+
+        if (!backendReady || cityMap == null) {
+
+            JOptionPane.showMessageDialog(
+                    this,
+                    "The backend is not connected yet.",
+                    "Backend Unavailable",
+                    JOptionPane.WARNING_MESSAGE
+            );
+
+            return;
+        }
 
         String start =
                 (String) startBox.getSelectedItem();
@@ -413,216 +528,484 @@ public class SmartNavigationApp extends JFrame {
 
         if (start == null || destination == null) {
 
-            resultArea.setText(
-                    "Please select both locations."
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Please select both locations.",
+                    "Missing Location",
+                    JOptionPane.WARNING_MESSAGE
+            );
+
+            return;
+        }
+
+        try {
+
+            Dijkstra.RouteResult result =
+                    Dijkstra.calculateShortestPath(
+                            cityMap,
+                            start,
+                            destination
+                    );
+
+            if (result == null) {
+
+                currentRoute.clear();
+
+                resultArea.setText(
+                        "NO ROUTE FOUND\n"
+                        + "==============================\n\n"
+                        + "From: " + start + "\n"
+                        + "To: " + destination + "\n\n"
+                        + "There is no connected route between "
+                        + "these locations in the loaded road network."
+                );
+
+                distanceLabel.setText(
+                        "DISTANCE | UNAVAILABLE"
+                );
+
+                statusLabel.setText(
+                        "STATUS | NO ROUTE"
+                );
+
+                mapPanel.repaint();
+
+                return;
+            }
+
+            currentRoute = new ArrayList<>(
+                    result.getPath()
+            );
+
+            StringBuilder output = new StringBuilder();
+
+            output.append("SHORTEST ROUTE FOUND\n");
+            output.append(
+                    "================================\n\n"
+            );
+
+            output.append("START: ")
+                    .append(start)
+                    .append("\n\n");
+
+            List<String> route = result.getPath();
+
+            for (int i = 0; i < route.size(); i++) {
+
+                output.append(i + 1)
+                        .append(". ")
+                        .append(route.get(i))
+                        .append("\n");
+
+                if (i < route.size() - 1) {
+                    output.append("   |\n   v\n");
+                }
+            }
+
+            output.append("\nDESTINATION: ")
+                    .append(destination)
+                    .append("\n\n");
+
+            output.append("TOTAL DISTANCE: ")
+                    .append(
+                            String.format(
+                                    Locale.US,
+                                    "%.2f",
+                                    result.getDistance()
+                            )
+                    )
+                    .append(" km\n\n");
+
+            output.append(
+                    "Algorithm: Backend Dijkstra\n"
+            );
+
+            output.append(
+                    "Source: MySQL road network\n\n"
+            );
+
+            output.append(
+                    "Distance reflects the weights stored "
+                    + "in the database."
+            );
+
+            resultArea.setText(output.toString());
+            resultArea.setCaretPosition(0);
+
+            distanceLabel.setText(
+                    "DISTANCE | "
+                    + String.format(
+                            Locale.US,
+                            "%.2f",
+                            result.getDistance()
+                    )
+                    + " KM"
             );
 
             statusLabel.setText(
-                    "STATUS  |  INPUT REQUIRED"
+                    "STATUS | ROUTE FOUND"
             );
 
-            return;
-        }
+            mapPanel.repaint();
 
-        if (start.equals(destination)) {
+        } catch (Exception ex) {
 
-            resultArea.setText(
-                    "YOU ARE ALREADY AT YOUR DESTINATION\n\n"
-                    + "Location: " + start + "\n"
-                    + "Total distance: 0 km"
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Could not calculate the route:\n"
+                    + ex.getMessage(),
+                    "Route Calculation Error",
+                    JOptionPane.ERROR_MESSAGE
             );
 
-            distanceLabel.setText("DISTANCE  |  0 KM");
-            statusLabel.setText("STATUS  |  COMPLETE");
+            statusLabel.setText(
+                    "STATUS | ROUTE ERROR"
+            );
+        }
+    }
 
-            return;
+    // =====================================================
+    // RESET
+    // =====================================================
+
+    private void resetForm() {
+
+        if (startBox.getItemCount() > 0) {
+            startBox.setSelectedIndex(0);
         }
 
-        Map<String, Integer> distances =
-                new HashMap<>();
+        if (destinationBox.getItemCount() > 0) {
 
-        Map<String, String> previous =
-                new HashMap<>();
-
-        for (String location : locations) {
-            distances.put(location, Integer.MAX_VALUE);
+            destinationBox.setSelectedIndex(
+                    destinationBox.getItemCount() > 1 ? 1 : 0
+            );
         }
 
-        distances.put(start, 0);
+        currentRoute.clear();
 
-        PriorityQueue<Node> queue =
-                new PriorityQueue<>(
-                        Comparator.comparingInt(
-                                node -> node.distance
-                        )
+        showWelcomeMessage();
+
+        distanceLabel.setText(
+                "DISTANCE | NOT CALCULATED"
+        );
+
+        statusLabel.setText(
+                backendReady
+                        ? "STATUS | READY"
+                        : "STATUS | DATABASE ERROR"
+        );
+
+        mapPanel.repaint();
+    }
+
+    // =====================================================
+    // SCHEMATIC ROAD NETWORK
+    // =====================================================
+
+    private class MapPanel extends JPanel {
+
+        MapPanel() {
+
+            setBackground(
+                    new Color(12, 18, 32)
+            );
+
+            setPreferredSize(
+                    new Dimension(480, 520)
+            );
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+
+            super.paintComponent(g);
+
+            Graphics2D g2 =
+                    (Graphics2D) g.create();
+
+            g2.setRenderingHint(
+                    RenderingHints.KEY_ANTIALIASING,
+                    RenderingHints.VALUE_ANTIALIAS_ON
+            );
+
+            int width = getWidth();
+            int height = getHeight();
+
+            drawGrid(g2, width, height);
+
+            if (!backendReady || cityMap == null) {
+
+                g2.setColor(Color.WHITE);
+
+                g2.setFont(
+                        new Font("Arial", Font.BOLD, 14)
                 );
 
-        Set<String> visited = new HashSet<>();
+                g2.drawString(
+                        "Waiting for backend...",
+                        20,
+                        35
+                );
 
-        queue.add(new Node(start, 0));
+                g2.dispose();
 
-        while (!queue.isEmpty()) {
-
-            Node node = queue.poll();
-            String current = node.location;
-
-            if (!visited.add(current)) {
-                continue;
+                return;
             }
 
-            if (current.equals(destination)) {
-                break;
+            List<String> locations =
+                    new ArrayList<>(
+                            cityMap.getLocations()
+                    );
+
+            Collections.sort(locations);
+
+            if (locations.isEmpty()) {
+
+                g2.setColor(Color.WHITE);
+
+                g2.drawString(
+                        "No locations available",
+                        20,
+                        35
+                );
+
+                g2.dispose();
+
+                return;
             }
 
-            for (Map.Entry<String, Integer> road :
-                    graph.get(current).entrySet()) {
+            Map<String, Point> points =
+                    calculatePoints(
+                            locations,
+                            width,
+                            height
+                    );
 
-                String neighbour = road.getKey();
-                int roadDistance = road.getValue();
+            drawRoads(g2, points);
+            drawRoute(g2, points);
+            drawLocations(g2, points, locations);
 
-                if (visited.contains(neighbour)) {
+            g2.dispose();
+        }
+
+        private void drawGrid(
+                Graphics2D g2,
+                int width,
+                int height) {
+
+            g2.setColor(
+                    new Color(25, 34, 52)
+            );
+
+            for (int x = 0; x < width; x += 35) {
+                g2.drawLine(x, 0, x, height);
+            }
+
+            for (int y = 0; y < height; y += 35) {
+                g2.drawLine(0, y, width, y);
+            }
+        }
+
+        private Map<String, Point> calculatePoints(
+                List<String> locations,
+                int width,
+                int height) {
+
+            Map<String, Point> points =
+                    new LinkedHashMap<>();
+
+            int count = locations.size();
+
+            int centerX = width / 2;
+            int centerY = height / 2;
+
+            int radiusX = Math.max(
+                    35,
+                    width / 2 - 75
+            );
+
+            int radiusY = Math.max(
+                    35,
+                    height / 2 - 75
+            );
+
+            for (int i = 0; i < count; i++) {
+
+                double angle =
+                        -Math.PI / 2
+                        + (2.0 * Math.PI * i / count);
+
+                int x = centerX
+                        + (int) (radiusX * Math.cos(angle));
+
+                int y = centerY
+                        + (int) (radiusY * Math.sin(angle));
+
+                points.put(
+                        locations.get(i),
+                        new Point(x, y)
+                );
+            }
+
+            return points;
+        }
+
+        private void drawRoads(
+                Graphics2D g2,
+                Map<String, Point> points) {
+
+            Map<String, Map<String, Double>> roads =
+                    cityMap.getRoads();
+
+            g2.setStroke(
+                    new BasicStroke(1.5f)
+            );
+
+            g2.setColor(
+                    new Color(95, 75, 125)
+            );
+
+            for (Map.Entry<String, Map<String, Double>> entry
+                    : roads.entrySet()) {
+
+                String from = entry.getKey();
+
+                Point p1 = points.get(from);
+
+                if (p1 == null) {
                     continue;
                 }
 
-                int newDistance =
-                        distances.get(current) + roadDistance;
+                for (String to : entry.getValue().keySet()) {
 
-                if (newDistance < distances.get(neighbour)) {
+                    Point p2 = points.get(to);
 
-                    distances.put(neighbour, newDistance);
+                    if (p2 == null) {
+                        continue;
+                    }
 
-                    previous.put(neighbour, current);
+                    // Draw each undirected connection once.
+                    // Directed connections are also represented
+                    // as a schematic line.
+                    if (from.compareTo(to) < 0) {
+                        g2.drawLine(
+                                p1.x,
+                                p1.y,
+                                p2.x,
+                                p2.y
+                        );
+                    }
+                }
+            }
+        }
 
-                    queue.add(
-                            new Node(neighbour, newDistance)
+        private void drawRoute(
+                Graphics2D g2,
+                Map<String, Point> points) {
+
+            if (currentRoute.size() < 2) {
+                return;
+            }
+
+            g2.setColor(green);
+
+            g2.setStroke(
+                    new BasicStroke(
+                            4.5f,
+                            BasicStroke.CAP_ROUND,
+                            BasicStroke.JOIN_ROUND
+                    )
+            );
+
+            for (int i = 0;
+                    i < currentRoute.size() - 1;
+                    i++) {
+
+                Point p1 = points.get(
+                        currentRoute.get(i)
+                );
+
+                Point p2 = points.get(
+                        currentRoute.get(i + 1)
+                );
+
+                if (p1 != null && p2 != null) {
+
+                    g2.drawLine(
+                            p1.x,
+                            p1.y,
+                            p2.x,
+                            p2.y
                     );
                 }
             }
         }
 
-        if (distances.get(destination)
-                == Integer.MAX_VALUE) {
+        private void drawLocations(
+                Graphics2D g2,
+                Map<String, Point> points,
+                List<String> locations) {
 
-            resultArea.setText(
-                    "No route found between these locations."
-            );
+            for (String location : locations) {
 
-            distanceLabel.setText(
-                    "DISTANCE  |  UNAVAILABLE"
-            );
+                Point point = points.get(location);
 
-            statusLabel.setText(
-                    "STATUS  |  NO ROUTE"
-            );
+                if (point == null) {
+                    continue;
+                }
 
-            return;
-        }
+                boolean selected =
+                        currentRoute.contains(location);
 
-        // RECONSTRUCT THE SHORTEST ROUTE
-        LinkedList<String> route = new LinkedList<>();
+                g2.setColor(
+                        selected ? green : pink
+                );
 
-        String current = destination;
+                g2.fillOval(
+                        point.x - 6,
+                        point.y - 6,
+                        12,
+                        12
+                );
 
-        while (current != null) {
+                g2.setColor(Color.WHITE);
 
-            route.addFirst(current);
-            current = previous.get(current);
-        }
+                g2.setFont(
+                        new Font("Arial", Font.PLAIN, 10)
+                );
 
-        // DISPLAY RESULTS
-        StringBuilder output = new StringBuilder();
+                String label = location;
 
-        output.append("✦ SHORTEST ROUTE FOUND\n");
-        output.append(
-                "========================================\n\n"
-        );
+                int maximumLabelLength = 22;
 
-        output.append("START       : ")
-                .append(start)
-                .append("\n");
+                if (label.length() > maximumLabelLength) {
+                    label = label.substring(
+                            0,
+                            maximumLabelLength - 3
+                    ) + "...";
+                }
 
-        output.append("DESTINATION : ")
-                .append(destination)
-                .append("\n\n");
+                int labelX = point.x + 9;
 
-        output.append("YOUR ROUTE\n\n");
+                if (labelX + 130 > getWidth()) {
+                    labelX = point.x - 125;
+                }
 
-        for (int i = 0; i < route.size(); i++) {
+                int labelY = point.y - 8;
 
-            output.append(i + 1)
-                    .append(". ")
-                    .append(route.get(i))
-                    .append("\n");
-
-            if (i < route.size() - 1) {
-                output.append("    |\n    v\n");
+                g2.drawString(
+                        label,
+                        labelX,
+                        labelY
+                );
             }
         }
-
-        output.append(
-                "\n========================================\n"
-        );
-
-        output.append("TOTAL DISTANCE: ")
-                .append(distances.get(destination))
-                .append(" km\n\n");
-
-        output.append(
-                "Algorithm: Dijkstra's Shortest Path\n"
-        );
-
-        output.append(
-                "Status: Route calculated successfully.\n\n"
-        );
-
-        output.append(
-                "NOTE: Distances are sample values for "
-                + "demonstration, not verified real-world "
-                + "road distances."
-        );
-
-        resultArea.setText(output.toString());
-        resultArea.setCaretPosition(0);
-
-        distanceLabel.setText(
-                "DISTANCE  |  "
-                + distances.get(destination)
-                + " KM"
-        );
-
-        statusLabel.setText(
-                "STATUS  |  ROUTE FOUND"
-        );
     }
 
-    // RESET THE FORM
-    private void resetForm() {
+    // =====================================================
+    // MAIN METHOD
+    // =====================================================
 
-        startBox.setSelectedIndex(0);
-        destinationBox.setSelectedIndex(0);
-
-        showWelcomeMessage();
-
-        distanceLabel.setText(
-                "DISTANCE  |  NOT CALCULATED"
-        );
-
-        statusLabel.setText("STATUS  |  READY");
-    }
-
-    // PRIORITY QUEUE NODE
-    private static class Node {
-
-        private final String location;
-        private final int distance;
-
-        Node(String location, int distance) {
-            this.location = location;
-            this.distance = distance;
-        }
-    }
-
-    // APPLICATION ENTRY POINT
     public static void main(String[] args) {
 
         SwingUtilities.invokeLater(
