@@ -79,4 +79,30 @@ public class PlaceRepository {
 
         return roads;
     }
+    public Map<String, double[]> loadCoordinates() throws SQLException {
+
+    Map<String, double[]> coordinates = new LinkedHashMap<>();
+
+    String sql = """
+        SELECT name, latitude, longitude
+        FROM places
+        WHERE latitude IS NOT NULL
+          AND longitude IS NOT NULL
+        """;
+
+    try (Connection connection = connect();
+         PreparedStatement statement = connection.prepareStatement(sql);
+         ResultSet result = statement.executeQuery()) {
+
+        while (result.next()) {
+            String name = result.getString("name");
+            double latitude = result.getDouble("latitude");
+            double longitude = result.getDouble("longitude");
+
+            coordinates.put(name, new double[] {latitude, longitude});
+        }
+    }
+
+    return coordinates;
+}
 }

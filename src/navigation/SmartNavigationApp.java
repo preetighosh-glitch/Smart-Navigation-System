@@ -91,6 +91,13 @@ public class SmartNavigationApp extends JFrame {
                 try {
                     cityMap = get();
 
+                    // Load geographic coordinates from the same MySQL database.
+                    Map<String, double[]> coordinates =
+                            new PlaceRepository().loadCoordinates();
+                    mapPanel.setMapDataJson(
+                            MapBridge.buildMapDataJson(cityMap, coordinates)
+                    );
+
                     List<String> locations =
                             new ArrayList<>(cityMap.getLocations());
 
@@ -380,7 +387,7 @@ public class SmartNavigationApp extends JFrame {
         mapContainer.add(mapPanel, BorderLayout.CENTER);
 
         JLabel mapNote = new JLabel(
-                "OPENSTREETMAP | REAL ROAD ROUTING"
+                "OFFLINE COORDINATE MAP | MYSQL + DIJKSTRA"
         );
 
         mapNote.setForeground(lightPink);
@@ -503,7 +510,7 @@ public class SmartNavigationApp extends JFrame {
                 + "from MySQL.\n\n"
                 + "The shortest route will be calculated using "
                 + "the backend's Dijkstra algorithm.\n\n"
-                + "The interactive map uses online map data."
+                + "The map uses locally rendered coordinates and database road connections."
         );
 
         resultArea.setCaretPosition(0);
@@ -579,7 +586,7 @@ public class SmartNavigationApp extends JFrame {
                         + "The database road network does not "
                         + "contain a connected route between "
                         + "these locations.\n\n"
-                        + "The online map route is cleared."
+                        + "The map route is cleared."
                 );
 
                 distanceLabel.setText(
@@ -597,9 +604,8 @@ public class SmartNavigationApp extends JFrame {
                     result.getPath()
             );
 
-            // Draw the real road route on the online map.
-            // The HTML map must contain matching landmark names.
-            mapPanel.showRoute(start, destination);
+            // Display the exact path calculated by the existing Dijkstra algorithm.
+            mapPanel.showRoute(currentRoute, result.getDistance());
 
             StringBuilder output = new StringBuilder();
 
@@ -736,8 +742,8 @@ public class SmartNavigationApp extends JFrame {
 
         private boolean mapLoaded = false;
 
-        private String pendingStart;
-        private String pendingDestination;
+        private String pendingMapDataJson;
+        private String pendingRouteJson;
 
         MapPanel() {
 
@@ -768,13 +774,11 @@ public class SmartNavigationApp extends JFrame {
 
                             mapLoaded = true;
 
-                            if (pendingStart != null
-                                    && pendingDestination != null) {
-
-                                executeRoute(
-                                        pendingStart,
-                                        pendingDestination
-                                );
+                            if (pendingMapDataJson != null) {
+                                executeMapData(pendingMapDataJson);
+                            }
+                            if (pendingRouteJson != null) {
+                                executeRouteJson(pendingRouteJson);
                             }
 
                         } else if (newState == Worker.State.FAILED) {
@@ -824,52 +828,48 @@ public class SmartNavigationApp extends JFrame {
             });
         }
 
-        public void showRoute(
-                String start,
-                String destination) {
-
-            pendingStart = start;
-            pendingDestination = destination;
-
-            if (mapLoaded) {
-                Platform.runLater(
-                        () -> executeRoute(start, destination)
-                );
+        public void setMapDataJson(String json) {
+            pendingMapDataJson = json;
+            if (mapLoaded && webEngine != null) {
+                Platform.runLater(() -> executeMapData(json));
             }
         }
 
-        private void executeRoute(
-                String start,
-                String destination) {
-
-            if (!mapLoaded || webEngine == null) {
+        private void executeMapData(String json) {
+            if (!mapLoaded || webEngine == null || json == null) {
                 return;
             }
-
-            String script =
-                    "showRoute("
-                    + toJavaScriptString(start)
-                    + ", "
-                    + toJavaScriptString(destination)
-                    + ");";
-
             try {
-
-                webEngine.executeScript(script);
-
+                webEngine.executeScript("receiveMapData(" + json + ");");
             } catch (Exception ex) {
+                System.err.println("Could not send database map data: "
+                        + ex.getMessage());
+            }
+        }
 
-                System.err.println(
-                        "Could not display route: "
-                        + ex.getMessage()
-                );
+        public void showRoute(List<String> path, double distanceKm) {
+            String json = MapBridge.buildRouteJson(path, distanceKm);
+            pendingRouteJson = json;
+            if (mapLoaded && webEngine != null) {
+                Platform.runLater(() -> executeRouteJson(json));
+            }
+        }
+
+        private void executeRouteJson(String json) {
+            if (!mapLoaded || webEngine == null || json == null) {
+                return;
+            }
+            try {
+                webEngine.executeScript("receiveRoute(" + json + ");");
+            } catch (Exception ex) {
+                System.err.println("Could not display database route: "
+                        + ex.getMessage());
             }
         }
 
         public void clearRoute() {
 
-            pendingStart = null;
-            pendingDestination = null;
+            pendingRouteJson = null;
 
             if (mapLoaded && webEngine != null) {
 

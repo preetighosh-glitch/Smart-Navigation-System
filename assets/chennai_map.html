@@ -1,77 +1,45 @@
 <!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Chennai Smart Navigation Map</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Chennai Neon Offline Map</title>
 <style>
-html, body, #map { width:100%; height:100%; margin:0; padding:0; }
-body { overflow:hidden; font-family:Arial,sans-serif; }
-#status { position:absolute; z-index:1000; top:10px; left:50px; max-width:70%; background:#fff; padding:8px 12px; border-radius:6px; box-shadow:0 1px 5px #777; font-size:13px; }
-</style>
-</head>
-<body>
-<div id="status">Chennai map loading…</div>
-<div id="map"></div>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+:root{color-scheme:dark;--bg:#050713;--cyan:#43eaff;--pink:#ff4bd8;--purple:#9b6aff;--text:#e9f2ff}*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--text);font:13px/1.4 'Segoe UI',Arial,sans-serif}#map{display:block;width:100%;height:100%;cursor:grab}.badge{position:absolute;top:12px;left:12px;background:#070b1df0;border:1px solid #7652ff;border-radius:12px;padding:10px 14px;box-shadow:0 0 24px #8c42ff35;pointer-events:none}.badge b{display:block;color:#ef8bff;letter-spacing:2px;font-size:16px;text-shadow:0 0 12px #d53dff}.badge span{font-size:10px;color:#a6c7ff;letter-spacing:1px}.status{position:absolute;left:12px;right:12px;bottom:12px;padding:8px 11px;border:1px solid #303b70;border-radius:8px;background:#070b1df2;color:#b5d0ff;pointer-events:none;box-shadow:0 0 18px #0008}.controls{position:absolute;right:12px;top:12px;display:grid;gap:5px}.controls button{width:36px;height:36px;border:1px solid #5651a7;border-radius:9px;background:#0b1027;color:var(--cyan);font-size:19px;cursor:pointer}.legend{position:absolute;right:12px;bottom:60px;max-width:165px;padding:9px 11px;border:1px solid #343b6a;border-radius:9px;background:#070b1de8;color:#bfd4ff;font-size:11px;pointer-events:none}.sw{display:inline-block;width:19px;height:3px;margin:0 6px 3px 0;border-radius:4px}.attribution{position:absolute;left:12px;top:88px;font-size:10px;color:#7d92bb;background:#060a18c9;padding:3px 6px;border-radius:4px;pointer-events:none}
+</style></head><body>
+<canvas id="map" aria-label="Offline Chennai geographic map"></canvas><div class="badge"><b>CHENNAI / NEON</b><span>OFFLINE STREET MAP · DATABASE ROUTING</span></div><div class="attribution">© OpenStreetMap contributors · local offline extract</div>
+<div class="controls"><button id="plus" title="Zoom in">+</button><button id="minus" title="Zoom out">−</button><button id="reset" title="Reset view">↺</button></div><div class="legend"><div><span class="sw" style="background:#ff9c43"></span>Major roads</div><div><span class="sw" style="background:#328fc1"></span>Local streets</div><div><span class="sw" style="background:#ff4bd8"></span>Selected route</div><div style="margin-top:4px;color:#7f9bc9">Drag to pan · +/- to zoom</div></div>
+<div id="status" class="status">Waiting for MySQL locations…</div>
+<script src="chennai_offline_data.js"></script>
 <script>
-const places = {
-  "Marina Beach": [13.0500, 80.2824],
-  "Fort St. George": [13.0800, 80.2870],
-  "Kapaleeshwarar Temple": [13.0336, 80.2697],
-  "Santhome Basilica": [13.0339, 80.2786],
-  "Elliot's Beach": [12.9988, 80.2707],
-  "Chennai Central Railway Station": [13.0827, 80.2756],
-  "Government Museum, Egmore": [13.0716, 80.2570],
-  "Valluvar Kottam": [13.0524, 80.2420]
-};
-const map = L.map('map').setView([13.055, 80.270], 12);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'
-}).addTo(map);
-const markers = {};
-Object.entries(places).forEach(([name, coords]) => {
-  markers[name] = L.marker(coords).addTo(map).bindPopup(name);
-});
-let routeLayer = null;
-function setStatus(text) { document.getElementById('status').textContent = text; }
-async function showRoute(startName, destinationName) {
-  if (!places[startName] || !places[destinationName]) {
-    setStatus('Choose valid start and destination places in the app.');
-    return;
-  }
-  if (routeLayer) { map.removeLayer(routeLayer); routeLayer = null; }
-  setStatus('Finding road route: ' + startName + ' → ' + destinationName + '…');
-  try {
-    const a = places[startName], b = places[destinationName];
-    const url = `https://router.project-osrm.org/route/v1/driving/${a[1]},${a[0]};${b[1]},${b[0]}?overview=full&geometries=geojson`;
-    const response = await fetch(url);
-    if (!response.ok) throw new Error('Routing service unavailable');
-    const data = await response.json();
-    if (!data.routes || !data.routes.length) throw new Error('No road route found');
-    const route = data.routes[0];
-    routeLayer = L.geoJSON(route.geometry, {style:{color:'#1677e8',weight:6,opacity:0.9}}).addTo(map);
-    map.fitBounds(routeLayer.getBounds(), {padding:[35,35]});
-    markers[startName].openPopup();
-    setStatus(`${startName} → ${destinationName} · ${(route.distance/1000).toFixed(2)} km by road · about ${Math.round(route.duration/60)} min`);
-  } catch (e) {
-    const bounds = L.latLngBounds([places[startName], places[destinationName]]);
-    map.fitBounds(bounds, {padding:[35,35]});
-    setStatus('Road route unavailable. Check internet; showing selected locations. ' + e.message);
-  }
-}
-function clearRoute() {
-  if (routeLayer) { map.removeLayer(routeLayer); routeLayer = null; }
-  map.setView([13.055,80.270],12);
-  setStatus('Select start and destination in the app, then click Find Shortest Route.');
-}
-window.showRoute = showRoute;
-window.clearRoute = clearRoute;
-window.addEventListener('load', () => {
-  setTimeout(() => map.invalidateSize(), 250);
-  setStatus('Select places in the app to display a road route.');
-});
-</script>
-</body>
-</html>
+(()=>{'use strict';const canvas=document.getElementById('map');let ctx=canvas.getContext('2d');const statusEl=document.getElementById('status');const baseCanvas=document.createElement('canvas');let baseCtx=baseCanvas.getContext('2d'),drawPending=false;let locations=[],coordinates={},dbRoads=[],route=[],routeDistance=null,scale=1,panX=0,panY=0,drag=null,ready=false,streetGraph=null,routeGeometry=null;const DATA=window.CHENNAI_OFFLINE_DATA||{roads:[],waterways:[],waterAreas:[],parks:[],railways:[],coastlines:[]};const C={bg:'#050713',grid:'#0d1730',minor:'#24405e',local:'#328fc1',secondary:'#32a5ce',primary:'#ff9c43',trunk:'#ff7b65',motorway:'#ff5acb',water:'#09294a',waterLine:'#168fba',park:'#07372f',pink:'#ff4bd8',purple:'#a17aff',cyan:'#43eaff',text:'#dce9ff'};const B={minLat:12.88,maxLat:13.20,minLon:80.12,maxLon:80.36};
+function status(s){statusEl.textContent=s}function scheduleDraw(){if(drawPending)return;drawPending=true;requestAnimationFrame(()=>{drawPending=false;draw()})}function rebuildBase(){const mainCtx=ctx;ctx=baseCtx;drawBase();ctx=mainCtx}function resize(){const dpr=window.devicePixelRatio||1;canvas.width=Math.max(1,canvas.clientWidth*dpr);canvas.height=Math.max(1,canvas.clientHeight*dpr);baseCanvas.width=canvas.width;baseCanvas.height=canvas.height;ctx.setTransform(dpr,0,0,dpr,0,0);baseCtx.setTransform(dpr,0,0,dpr,0,0);rebuildBase();draw()}
+function project(lat,lon){const w=canvas.clientWidth,h=canvas.clientHeight,cos=Math.cos(13.04*Math.PI/180),x=(lon-B.minLon)*cos,y=(B.maxLat-lat),sx=(B.maxLon-B.minLon)*cos,sy=B.maxLat-B.minLat,padX=26,padY=25,fit=Math.min((w-2*padX)/sx,(h-2*padY)/sy);return{x:padX+((x/sx)*(w-2*padX)),y:padY+((y/sy)*(h-2*padY))}}
+function transform(){const w=canvas.clientWidth,h=canvas.clientHeight;ctx.translate(panX,panY);ctx.translate(w/2,h/2);ctx.scale(scale,scale);ctx.translate(-w/2,-h/2)}function pathCoords(coords,close=false){if(!coords||coords.length<2)return;ctx.beginPath();coords.forEach((c,i)=>{const p=project(c[0],c[1]);if(i===0)ctx.moveTo(p.x,p.y);else ctx.lineTo(p.x,p.y)});if(close)ctx.closePath()}
+function drawBase(){const w=canvas.clientWidth,h=canvas.clientHeight;ctx.fillStyle=C.bg;ctx.fillRect(0,0,w,h);const g=ctx.createRadialGradient(w*.42,h*.42,5,w*.5,h*.5,Math.max(w,h)*.8);g.addColorStop(0,'#0b1930');g.addColorStop(1,'#030610');ctx.fillStyle=g;ctx.fillRect(0,0,w,h);
+// A subtle cartographic grid, not a substitute for the road data.
+ctx.strokeStyle='#101a31';ctx.lineWidth=.5;for(let x=0;x<w;x+=32){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,h);ctx.stroke()}for(let y=0;y<h;y+=32){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke()}
+// Fill the Bay of Bengal on the eastern side of the Chennai shoreline.
+const sea=[[13.20,80.36],[13.20,80.315],[13.16,80.305],[13.12,80.302],[13.08,80.300],[13.05,80.289],[13.03,80.282],[13.00,80.277],[12.96,80.273],[12.92,80.270],[12.88,80.270],[12.88,80.36]];pathCoords(sea,true);ctx.fillStyle='#041b31';ctx.fill();
+// Water areas, parks, coastline and local OSM vector features are all stored locally.
+(DATA.waterAreas||[]).forEach(f=>{if(!f.coords||f.coords.length<3)return;pathCoords(f.coords,true);ctx.fillStyle=C.water;ctx.fill();ctx.strokeStyle='#0d5274';ctx.lineWidth=.8;ctx.stroke()});
+(DATA.parks||[]).forEach(f=>{if(!f.coords||f.coords.length<3)return;pathCoords(f.coords,true);ctx.fillStyle=C.park;ctx.globalAlpha=.85;ctx.fill();ctx.globalAlpha=1;ctx.strokeStyle='#08735c';ctx.lineWidth=.6;ctx.stroke()});
+// Streets are rendered in layers by OSM highway classification.
+const ranks={motorway:6,trunk:5,primary:4,secondary:3,tertiary:2,unclassified:1,residential:1,living_street:1,service:0,track:0};const roadList=(DATA.roads||[]).slice().sort((a,b)=>(ranks[a.highway]||0)-(ranks[b.highway]||0));roadList.forEach(f=>{if(!f.coords||f.coords.length<2)return;const r=ranks[f.highway]||0;pathCoords(f.coords);ctx.lineCap='round';ctx.lineJoin='round';ctx.strokeStyle=r>=5?'#8a4d8c':r>=4?C.primary:r>=3?C.secondary:r>=2?C.local:'#1a3552';ctx.lineWidth=r>=5?2.5:r>=4?2:r>=3?1.25:r>=2?.8:.45;ctx.globalAlpha=r>=3?.94:.76;ctx.stroke();ctx.globalAlpha=1});
+(DATA.railways||[]).forEach(f=>{if(!f.coords||f.coords.length<2)return;pathCoords(f.coords);ctx.setLineDash([4,4]);ctx.strokeStyle='#8d7bcb';ctx.lineWidth=.8;ctx.stroke();ctx.setLineDash([])});
+(DATA.waterways||[]).forEach(f=>{if(!f.coords||f.coords.length<2)return;pathCoords(f.coords);ctx.strokeStyle=C.waterLine;ctx.lineWidth=1.3;ctx.globalAlpha=.8;ctx.stroke();ctx.globalAlpha=1});
+(DATA.coastlines||[]).forEach(f=>{if(!f.coords||f.coords.length<2)return;pathCoords(f.coords);ctx.strokeStyle='#13b8e6';ctx.lineWidth=1.7;ctx.shadowColor='#00bfff';ctx.shadowBlur=7;ctx.stroke();ctx.shadowBlur=0});
+// Neighbourhood labels supplied from a small fixed set, positioned geographically.
+const labels=[['THIRUVOTTIYUR',13.16,80.30],['PERAMBUR',13.11,80.23],['ANNA NAGAR',13.085,80.205],['KILPAUK',13.082,80.235],['EGMORE',13.073,80.26],['GEORGE TOWN',13.095,80.29],['TRIPLICANE',13.06,80.28],['MYLAPORE',13.035,80.27],['T. NAGAR',13.04,80.235],['ADYAR',13.005,80.255],['GUINDY',13.01,80.22],['VELACHERY',12.98,80.22],['TAMBARAM',12.925,80.13],['SHOLINGANALLUR',12.90,80.23],['PORUR',13.035,80.16],['AMBATTUR',13.11,80.16]];ctx.font='10px Segoe UI,Arial';ctx.textAlign='center';ctx.fillStyle='#6684ad';labels.forEach(([n,lat,lon])=>{const p=project(lat,lon);ctx.fillText(n,p.x,p.y)});
+// Major road labels are decorative labels for roads in the local extract.
+(DATA.roads||[]).filter(f=>f.name&&['Anna Salai','East Coast Road','Grand Southern Trunk Road','Poonamallee High Road','Old Mahabalipuram Road','Inner Ring Road'].includes(f.name)&&f.coords&&f.coords.length>4).slice(0,24).forEach(f=>{const c=f.coords[Math.floor(f.coords.length/2)],p=project(c[0],c[1]);ctx.save();ctx.translate(p.x,p.y);ctx.fillStyle='#f4b77b';ctx.font='9px Segoe UI';ctx.fillText(f.name,0,-3);ctx.restore()});}
+function placePoints(){const out={};Object.keys(coordinates).forEach(n=>{const c=coordinates[n];if(Array.isArray(c)&&c.length>=2)out[n]=project(+c[0],+c[1])});return out}
+function graphForRouting(){if(streetGraph)return streetGraph;const nodes=new Map(),adj=new Map();function key(lat,lon){return (+lat).toFixed(6)+','+(+lon).toFixed(6)}function addNode(lat,lon){const k=key(lat,lon);if(!nodes.has(k))nodes.set(k,[+lat,+lon]);if(!adj.has(k))adj.set(k,[]);return k}function addEdge(a,b){if(a===b)return;const A=nodes.get(a),B=nodes.get(b),d=haversine(A[0],A[1],B[0],B[1]);adj.get(a).push([b,d]);adj.get(b).push([a,d])}for(const f of (DATA.roads||[])){const cs=f.coords;if(!cs||cs.length<2)continue;let prev=null;for(const c of cs){const k=addNode(c[0],c[1]);if(prev!==null)addEdge(prev,k);prev=k}}streetGraph={nodes,adj};return streetGraph}
+function haversine(a,b,c,d){const R=6371,rad=x=>x*Math.PI/180,da=rad(c-a),db=rad(d-b),q=Math.sin(da/2)**2+Math.cos(rad(a))*Math.cos(rad(c))*Math.sin(db/2)**2;return 2*R*Math.asin(Math.min(1,Math.sqrt(q)))}
+function nearestNode(lat,lon,g,maxKm=7){let best=null,bd=Infinity;for(const [k,c] of g.nodes){const d=haversine(lat,lon,c[0],c[1]);if(d<bd){bd=d;best=k}}return bd<=maxKm?best:null}
+function shortestStreetPath(startName,endName,g){const a=coordinates[startName],b=coordinates[endName];if(!a||!b||!g.nodes.size)return null;const s=nearestNode(+a[0],+a[1],g,7),t=nearestNode(+b[0],+b[1],g,7);if(!s||!t)return null;const dist=new Map([[s,0]]),prev=new Map(),heap=[[0,s]];function push(item){heap.push(item);let i=heap.length-1;while(i>0){let p=(i-1)>>1;if(heap[p][0]<=item[0])break;heap[i]=heap[p];i=p}heap[i]=item}function pop(){if(!heap.length)return null;const top=heap[0],last=heap.pop();if(heap.length){let i=0;while(true){let l=i*2+1,r=l+1;if(l>=heap.length)break;let c=r<heap.length&&heap[r][0]<heap[l][0]?r:l;if(heap[c][0]>=last[0])break;heap[i]=heap[c];i=c}heap[i]=last}return top}while(heap.length){const item=pop(),du=item[0],u=item[1];if(du!==(dist.get(u)))continue;if(u===t)break;for(const [v,w] of (g.adj.get(u)||[])){const nd=du+w;if(nd<(dist.get(v)??Infinity)){dist.set(v,nd);prev.set(v,u);push([nd,v])}}}if(!dist.has(t))return null;const keys=[];let cur=t;while(cur!==undefined){keys.push(cur);if(cur===s)break;cur=prev.get(cur)}if(keys[keys.length-1]!==s)return null;keys.reverse();return keys.map(k=>g.nodes.get(k))}
+function buildRouteGeometry(){routeGeometry=null;if(route.length<2)return;const g=graphForRouting();if(!g.nodes.size)return;let all=[];for(let i=0;i<route.length-1;i++){const seg=shortestStreetPath(route[i],route[i+1],g);if(!seg){routeGeometry=null;return}if(all.length)seg.shift();all=all.concat(seg)}if(all.length>1)routeGeometry=all}
+function draw(){const w=canvas.clientWidth,h=canvas.clientHeight;ctx.clearRect(0,0,w,h);ctx.save();transform();ctx.drawImage(baseCanvas,0,0,w,h);const p=placePoints();
+// Show DB connections subtly, behind the highlighted route.
+for(const r of dbRoads){const a=p[r.from],b=p[r.to];if(!a||!b)continue;ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.strokeStyle='#7e61c9';ctx.lineWidth=1.4;ctx.globalAlpha=.6;ctx.stroke();ctx.globalAlpha=1}
+if(route.length>1){if(routeGeometry&&routeGeometry.length>1){pathCoords(routeGeometry);ctx.strokeStyle=C.pink;ctx.lineWidth=7;ctx.shadowColor=C.pink;ctx.shadowBlur=18;ctx.lineJoin='round';ctx.lineCap='round';ctx.stroke();ctx.shadowBlur=0;ctx.strokeStyle='#ffd9fa';ctx.lineWidth=1.6;ctx.stroke()}else{ctx.beginPath();let started=false;route.forEach(n=>{const q=p[n];if(!q)return;if(!started){ctx.moveTo(q.x,q.y);started=true}else ctx.lineTo(q.x,q.y)});ctx.strokeStyle=C.pink;ctx.lineWidth=6;ctx.shadowColor=C.pink;ctx.shadowBlur=17;ctx.lineJoin='round';ctx.lineCap='round';ctx.stroke();ctx.shadowBlur=0;ctx.strokeStyle='#ffd9fa';ctx.lineWidth=1.4;ctx.stroke();}}
+Object.entries(p).forEach(([name,q])=>{const on=route.includes(name),isS=route.length&&name===route[0],isE=route.length&&name===route[route.length-1];ctx.beginPath();ctx.arc(q.x,q.y,isS||isE?6.5:4,0,Math.PI*2);ctx.fillStyle=isS?'#55ffca':isE?C.pink:on?C.pink:C.cyan;ctx.shadowColor=ctx.fillStyle;ctx.shadowBlur=on||isS||isE?14:6;ctx.fill();ctx.shadowBlur=0;ctx.strokeStyle='#061020';ctx.lineWidth=2;ctx.stroke();ctx.font='11px Segoe UI,Arial';ctx.textAlign=q.x>canvas.clientWidth*.72?'right':'left';const dx=q.x>canvas.clientWidth*.72?-9:9;ctx.lineWidth=3;ctx.strokeStyle=C.bg;ctx.strokeText(name,q.x+dx,q.y-9);ctx.fillStyle=on?'#ffc9f5':'#c1d9ff';ctx.fillText(name,q.x+dx,q.y-9)});ctx.restore()}
+function receiveMapData(data){try{if(typeof data==='string')data=JSON.parse(data);locations=Array.isArray(data.locations)?data.locations:[];coordinates=data.coordinates||{};dbRoads=Array.isArray(data.roads)?data.roads:[];streetGraph=null;routeGeometry=null;ready=true;const count=(DATA.roads||[]).length;if(count){status(`Loaded ${locations.length} database places · ${count.toLocaleString()} offline street segments · choose a route in the Java app.`)}else{status(`Loaded ${locations.length} database places, but offline street data is missing. Run tools/download_chennai_map.py once while online.`)}draw()}catch(e){status('Could not read map data: '+e.message)}}function receiveRoute(data){try{if(typeof data==='string')data=JSON.parse(data);if(!data||!Array.isArray(data.path)||!data.path.length){route=[];routeGeometry=null;routeDistance=null;status('No connected route was found in the database.');draw();return}route=data.path;routeDistance=+data.distance;buildRouteGeometry();status(`Dijkstra route · ${route[0]} → ${route[route.length-1]} · ${Number.isFinite(routeDistance)?routeDistance.toFixed(2)+' km database distance':''} · street geometry from local offline map`);draw()}catch(e){status('Could not display route: '+e.message)}}function clearRoute(){route=[];routeGeometry=null;routeDistance=null;status(ready?'Offline Chennai map ready. Choose a route in the Java app.':'Waiting for MySQL locations…');draw()}
+document.getElementById('plus').onclick=()=>{scale=Math.min(8,scale*1.2);scheduleDraw()};document.getElementById('minus').onclick=()=>{scale=Math.max(.55,scale/1.2);scheduleDraw()};document.getElementById('reset').onclick=()=>{scale=1;panX=panY=0;scheduleDraw()};canvas.addEventListener('pointerdown',e=>{drag={x:e.clientX,y:e.clientY,px:panX,py:panY};canvas.setPointerCapture(e.pointerId);canvas.style.cursor='grabbing'});canvas.addEventListener('pointermove',e=>{if(!drag)return;panX=drag.px+e.clientX-drag.x;panY=drag.py+e.clientY-drag.y;scheduleDraw()});canvas.addEventListener('pointerup',()=>{drag=null;canvas.style.cursor='grab'});canvas.addEventListener('pointercancel',()=>{drag=null;canvas.style.cursor='grab'});window.addEventListener('resize',resize);window.receiveMapData=receiveMapData;window.receiveRoute=receiveRoute;window.clearRoute=clearRoute;resize();if(!DATA.roads||!DATA.roads.length)status('Offline map data not installed yet. Run tools/download_chennai_map.py once with internet, then restart the app.');})();
+</script></body></html>
